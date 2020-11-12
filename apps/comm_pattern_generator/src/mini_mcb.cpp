@@ -272,7 +272,7 @@ void neighbor_communication_init()
 {
   int i;
   int seed;
-  seed = time(0);//my_rank;
+  seed = time(0);//& my_rank;
   init_rand(seed);
   my_kv = (struct key_val*)malloc(sizeof(struct key_val) * NUM_KV_PER_RANK);
   for (i = 0; i < NUM_KV_PER_RANK; i++) {

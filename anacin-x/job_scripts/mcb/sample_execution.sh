@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-#SBATCH -o trace_mcb_%j.out
-#SBATCH -e trace_mcb_%j.err
+#SBATCH -o trace_mcb-%j.out
+#SBATCH -e trace_mcb-%j.err
 #SBATCH -t 1:00:00
 
 # General execution parameters
@@ -32,7 +32,9 @@ LD_PRELOAD=${pnmpi_lib} PNMPI_LIB_PATH=${pnmpi_patched_libs_dir} PNMPI_CONF=${pn
      ${mcb_executable} \
      --nMpiTasksX=${n_mpi_tasks_x} \
      --nMpiTasksY=${n_mpi_tasks_y} \
-     --nThreadCore=1
+     --nThreadCore=1 \
+     --mirrorBoundary \
+     --distributedSource
 
 
     

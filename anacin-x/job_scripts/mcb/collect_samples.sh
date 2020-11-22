@@ -4,9 +4,9 @@ sample_idx_low=$1
 sample_idx_high=$2
 
 n_nodes=1
-n_procs=24
-n_procs_per_node=24
-n_mpi_tasks_x=6
+n_procs=16
+n_procs_per_node=16
+n_mpi_tasks_x=4
 n_mpi_tasks_y=4
 
 source ../../base_vars.sh
@@ -33,19 +33,37 @@ merge_barriers_executable=${anacin_x_root}/anacin-x/event_graph_analysis/merge_b
 merge_barriers_job_script=${job_scripts_root}/common/merge_barriers.sh
 
 # Slice extraction
-extract_slices_executable=${anacin_x_root}/anacin-x/event_graph_analysis/extract_slices.py
-slicing_policy=${anacin_x_root}/anacin-x/event_graph_analysis/slicing_policies/barrier_delimited_full.json
-extract_slices_job_script=${job_scripts_root}/common/extract_slices.sh
 n_procs_extract_slices=24
 n_procs_per_node_extract_slices=24
 n_nodes_extract_slices=$(echo "(${n_procs_extract_slices} + ${n_procs_per_node_extract_slices} - 1)/${n_procs_per_node_extract_slices}" | bc)
+extract_slices_executable=${anacin_x_root}/anacin-x/event_graph_analysis/extract_slices.py
+slicing_policy=${anacin_x_root}/anacin-x/event_graph_analysis/slicing_policies/barrier_delimited_full.json
+slice_dir_name="slices_$(basename ${slicing_policy} .json)"
+extract_slices_job_script=${job_scripts_root}/common/extract_slices.sh
 
+# Sample comparison (currently computing a kernel distance time series)
+n_procs_compute_kdts=24
+n_procs_per_node_compute_kdts=24
+n_nodes_compute_kdts=$(echo "(${n_procs_compute_kdts} + ${n_procs_per_node_compute_kdts} - 1)/${n_procs_per_node_compute_kdts}" | bc)
+compute_kdts_executable=${anacin_x_root}/anacin-x/event_graph_analysis/compute_kernel_distance_time_series.py
+compute_kdts_job_script=${job_scripts_root}/common/compute_kdts.sh
+graph_kernel=${anacin_x_root}/anacin-x/event_graph_analysis/graph_kernel_policies/wlst_5iters_logical_timestamp_label.json
+
+
+# Convenience function for making the dependency lists for the kernel distance
+# time series job
+function join_by { local IFS="$1"; shift; echo "$*"; }
+
+# Array to hold all of the job IDs that the sample comparison jobs depend on
+sample_comparison_job_deps=()
+
+# Sample executions
 for sample_idx in `seq -f "%04g" ${sample_idx_low} ${sample_idx_high}`;
 do
     # Make the directory that will hold this execution's trace files, event 
     # graph, and any other derived data (e.g., event graph slices) specific to 
     # this execution.
-    results_dir="${results_root_dir}/${sample_idx}/"
+    results_dir="${results_root_dir}/run_${sample_idx}/"
     mkdir -p ${results_dir}
     cd ${results_dir}
                 
@@ -73,6 +91,16 @@ do
     # Extract slices
     extract_slices_stdout=$(sbatch -N${n_nodes_extract_slices} --dependency=afterok:${merge_barriers_job_id} ${extract_slices_job_script} ${n_procs_extract_slices} ${extract_slices_executable} ${event_graph} ${slicing_policy})
     extract_slices_job_id=$( echo ${extract_slices_stdout} | sed 's/[^0-9]*//g' ) 
+
+    # Append final job ID in pipeline for this sample to dependency list
+    sample_comparison_job_deps+=(${extract_slices_job_id})
 done
+
+# Compute kernel distances for each slice
+kdts_job_dep_str=$(join_by : ${sample_comparison_job_deps[@]})
+cd ${results_root_dir}
+compute_kdts_stdout=$(sbatch -N${n_nodes_compute_kdts} --dependency=afterok:${kdts_job_dep_str} ${compute_kdts_job_script} ${n_procs_compute_kdts} ${compute_kdts_executable} ${results_root_dir} ${graph_kernel} ${slice_dir_name})
+
+#compute_kdts_stdout=$(sbatch -N${n_nodes_compute_kdts} ${compute_kdts_job_script} ${n_procs_compute_kdts} ${compute_kdts_executable} ${results_root_dir} ${graph_kernel} ${slice_dir_name})
 
 
